@@ -32,7 +32,7 @@ h2 .round{text-transform:none;letter-spacing:0;color:var(--ink3);font-weight:500
 .tiles div{background:var(--bg);border-radius:10px;padding:10px 12px}.tiles span{font-size:12px;color:var(--ink3);display:block}.tiles b{font-size:17px;font-weight:600}
 .foot{color:var(--ink3);font-size:12px;margin-top:12px}
 .mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--ink2)}
-a{color:var(--accent)}
+a{color:var(--accent)} small.sub{display:block;margin-top:2px}
 </style>
 </head>
 <body>
@@ -40,7 +40,7 @@ a{color:var(--accent)}
 <header class="top">
   <div class="brand"><span class="mark" aria-hidden="true"></span><h1>RESET</h1>
     <span class="addr" id="shortAddr">…</span></div>
-  <div class="status"><span id="live" class="pill warn"><i></i>Connecting…</span></div>
+  <div class="status"><span id="live" class="pill warn"><i></i>Loading…</span></div>
 </header>
 <div class="grid">
   <section class="card">
@@ -61,13 +61,13 @@ a{color:var(--accent)}
       <div><span>Mine payouts (last)</span><b class="num" id="payout">—</b></div>
       <div><span>Penalties (last)</span><b class="num" id="penalty">—</b></div>
     </div>
-    <p class="foot">Live from gateway · refreshes every 20s · history chart needs the local official dashboard</p>
+    <p class="foot">Data file refreshed about every 5 minutes by GitHub Actions (no browser CORS).</p>
   </section>
   <section class="card">
     <h2>Mine <span class="round" id="roundLabel">round —</span></h2>
-    <p class="state"><span id="windowPill" class="pill"><i></i>—</span></p>
+    <p><span id="windowPill" class="pill"><i></i>—</span></p>
     <dl>
-      <div class="row"><dt>My fair share now</dt><dd><span class="num" id="fair">—</span><br><small class="sub">estimate if the round settled now</small></dd></div>
+      <div class="row"><dt>My fair share now</dt><dd><span class="num" id="fair">—</span><small class="sub">estimate if the round settled now</small></dd></div>
       <div class="row"><dt>This round</dt><dd id="claimLine">—</dd></div>
       <div class="row"><dt>My last claim</dt><dd id="lastLine">—</dd></div>
       <div class="row"><dt>strikes / clean</dt><dd class="num" id="strikes">—</dd></div>
@@ -88,37 +88,23 @@ a{color:var(--accent)}
 </main>
 <script>
 const ADDR = '476a5c9d3e514a81eb81bca423d31b13e10b72179fa7caed421e96a57fd982f6';
-const API = 'https://reset.openmayhem.ai/v1/account/' + ADDR;
-const STATE = 'https://reset.openmayhem.ai/v1/state';
 const u = n => (Number(n) / 1e8).toFixed(8);
 document.getElementById('shortAddr').textContent = ADDR.slice(0,8) + '…' + ADDR.slice(-6);
 document.getElementById('fullAddr').textContent = ADDR;
-document.getElementById('raw').href = API;
-async function getJson(url) {
-  const tries = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
-  let last;
-  for (const t of tries) {
-    try {
-      const r = await fetch(t, { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.json();
-    } catch (e) { last = e; }
-  }
-  throw last;
-}
+document.getElementById('raw').href = 'https://reset.openmayhem.ai/v1/account/' + ADDR;
 async function refresh() {
   const live = document.getElementById('live');
   try {
-    const [acc, state] = await Promise.all([getJson(API), getJson(STATE)]);
-    const m = acc.mine || {}, lr = m.last_result || {};
+    const r = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const acc = data.account || {}, state = data.state || {}, m = acc.mine || {}, lr = m.last_result || {};
     const exitSum = (acc.exits || []).reduce((s, e) => s + Number(e.amount || e.a || 0), 0);
     document.getElementById('total').textContent = u(Number(acc.balance||0) + Number(acc.deposit||0) + exitSum);
     document.getElementById('balance').textContent = u(acc.balance);
     document.getElementById('deposit').textContent = u(acc.deposit);
     document.getElementById('exits').textContent = u(exitSum);
     document.getElementById('roundLabel').textContent = 'round ' + (m.r ?? '—');
-    const open = !!m.claim || false;
-    // window open isn't in account; infer from claim presence / use state if present
     const win = document.getElementById('windowPill');
     if (m.claim) {
       win.className = 'pill good'; win.innerHTML = '<i></i>Claim registered this round';
@@ -146,15 +132,16 @@ async function refresh() {
     const gws = state?.gateways || [];
     const active = gws.filter(g => g.active).length;
     document.getElementById('gw').textContent = active + ' of ' + Math.max(gws.length, 1);
+    const when = data.updated_at ? new Date(data.updated_at).toLocaleString() : '';
     live.className = 'pill good';
-    live.innerHTML = '<i></i>Live · ' + new Date().toLocaleString();
+    live.innerHTML = '<i></i>Live · updated ' + when;
   } catch (e) {
     live.className = 'pill bad';
     live.innerHTML = '<i></i>Refresh failed';
   }
 }
 refresh();
-setInterval(refresh, 20000);
+setInterval(refresh, 30000);
 </script>
 </body>
 </html>
