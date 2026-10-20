@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>RESET dashboard</title>
+<style>
+:root{color-scheme:light;--bg:#f4f3ef;--card:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#77766f;--line:#e3e1da;--accent:#2a78d6;--area:rgba(42,120,214,.12);--good:#16692f;--good-bg:#e1f1e5;--warn:#8a5300;--warn-bg:#f9ecd4;--bad:#a8261d;--bad-bg:#f9e2df;--muted-bg:#ecebe6}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#121211;--card:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#8e8d85;--line:#2d2d2a;--accent:#3987e5;--area:rgba(57,135,229,.18);--good:#7fd396;--good-bg:#1d3324;--warn:#f0b65c;--warn-bg:#3a2c14;--bad:#f2948b;--bad-bg:#3d1f1c;--muted-bg:#262624}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:1080px;margin:0 auto;padding:24px 20px 48px}
+.num{font-variant-numeric:tabular-nums}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:12px}.brand h1{font-size:18px;letter-spacing:.14em;margin:0;font-weight:650}
+.mark{width:14px;height:14px;border-radius:4px;background:var(--accent);box-shadow:5px 5px 0 -1px var(--area)}
+.addr{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink2);background:var(--card);border:1px solid var(--line);padding:2px 8px;border-radius:999px}
+.status{display:flex;align-items:center;gap:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;min-width:0}
+.card[data-wide]{grid-column:span 2}
+@media (max-width:700px){.card[data-wide]{grid-column:auto}}
+h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:0 0 14px}
+h2 .round{text-transform:none;letter-spacing:0;color:var(--ink3);font-weight:500;margin-left:6px}
+.hero{font-size:34px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0}.sub{color:var(--ink3);font-size:13px;margin:2px 0 14px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:9px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}.row dt{color:var(--ink2);flex:none}.row dd{margin:0;text-align:right;min-width:0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:550;padding:3px 10px;border-radius:999px;background:var(--muted-bg);color:var(--ink2)}
+.pill i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.good{background:var(--good-bg);color:var(--good)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 0}
+.tiles div{background:var(--bg);border-radius:10px;padding:10px 12px}.tiles span{font-size:12px;color:var(--ink3);display:block}.tiles b{font-size:17px;font-weight:600}
+.foot{color:var(--ink3);font-size:12px;margin-top:12px}
+.mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--ink2)}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main id="app">
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><h1>RESET</h1>
+    <span class="addr" id="shortAddr">…</span></div>
+  <div class="status"><span id="live" class="pill warn"><i></i>Connecting…</span></div>
+</header>
+<div class="grid">
+  <section class="card">
+    <h2>My coins</h2>
+    <p class="hero num" id="total">—</p>
+    <p class="sub">in total</p>
+    <dl>
+      <div class="row"><dt>Spendable</dt><dd class="num" id="balance">—</dd></div>
+      <div class="row"><dt>Locked in the Mine</dt><dd class="num" id="deposit">—</dd></div>
+      <div class="row"><dt>Waiting to exit</dt><dd class="num" id="exits">—</dd></div>
+    </dl>
+  </section>
+  <section class="card" data-wide>
+    <h2>My earnings</h2>
+    <p class="hero num" id="earned">—</p>
+    <p class="sub" id="earnedSub">from last settled claim</p>
+    <div class="tiles">
+      <div><span>Mine payouts (last)</span><b class="num" id="payout">—</b></div>
+      <div><span>Penalties (last)</span><b class="num" id="penalty">—</b></div>
+    </div>
+    <p class="foot">Live from gateway · refreshes every 20s · history chart needs the local official dashboard</p>
+  </section>
+  <section class="card">
+    <h2>Mine <span class="round" id="roundLabel">round —</span></h2>
+    <p class="state"><span id="windowPill" class="pill"><i></i>—</span></p>
+    <dl>
+      <div class="row"><dt>My fair share now</dt><dd><span class="num" id="fair">—</span><br><small class="sub">estimate if the round settled now</small></dd></div>
+      <div class="row"><dt>This round</dt><dd id="claimLine">—</dd></div>
+      <div class="row"><dt>My last claim</dt><dd id="lastLine">—</dd></div>
+      <div class="row"><dt>strikes / clean</dt><dd class="num" id="strikes">—</dd></div>
+    </dl>
+  </section>
+  <section class="card">
+    <h2>Network</h2>
+    <dl>
+      <div class="row"><dt>Bitcoin tip</dt><dd class="num" id="tip">—</dd></div>
+      <div class="row"><dt>Counted</dt><dd class="num" id="counted">—</dd></div>
+      <div class="row"><dt>Gateways active</dt><dd id="gw">—</dd></div>
+    </dl>
+    <p class="foot mono" id="fullAddr"></p>
+    <p class="foot"><a id="raw" href="#" target="_blank" rel="noopener">Raw account JSON</a> ·
+      <a href="https://playbay.games/games/f6296401-6c88-414a-a436-b7012de3e6c2" target="_blank" rel="noopener">Miners' World</a></p>
+  </section>
+</div>
+</main>
+<script>
+const ADDR = '476a5c9d3e514a81eb81bca423d31b13e10b72179fa7caed421e96a57fd982f6';
+const API = 'https://reset.openmayhem.ai/v1/account/' + ADDR;
+const STATE = 'https://reset.openmayhem.ai/v1/state';
+const u = n => (Number(n) / 1e8).toFixed(8);
+document.getElementById('shortAddr').textContent = ADDR.slice(0,8) + '…' + ADDR.slice(-6);
+document.getElementById('fullAddr').textContent = ADDR;
+document.getElementById('raw').href = API;
+async function getJson(url) {
+  const tries = [url, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  let last;
+  for (const t of tries) {
+    try {
+      const r = await fetch(t, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+async function refresh() {
+  const live = document.getElementById('live');
+  try {
+    const [acc, state] = await Promise.all([getJson(API), getJson(STATE)]);
+    const m = acc.mine || {}, lr = m.last_result || {};
+    const exitSum = (acc.exits || []).reduce((s, e) => s + Number(e.amount || e.a || 0), 0);
+    document.getElementById('total').textContent = u(Number(acc.balance||0) + Number(acc.deposit||0) + exitSum);
+    document.getElementById('balance').textContent = u(acc.balance);
+    document.getElementById('deposit').textContent = u(acc.deposit);
+    document.getElementById('exits').textContent = u(exitSum);
+    document.getElementById('roundLabel').textContent = 'round ' + (m.r ?? '—');
+    const open = !!m.claim || false;
+    // window open isn't in account; infer from claim presence / use state if present
+    const win = document.getElementById('windowPill');
+    if (m.claim) {
+      win.className = 'pill good'; win.innerHTML = '<i></i>Claim registered this round';
+      document.getElementById('claimLine').textContent = 'You claimed level ' + m.claim.q + ' (fair share = 1000).';
+    } else {
+      win.className = 'pill'; win.innerHTML = '<i></i>No claim yet this round';
+      document.getElementById('claimLine').textContent = 'Waiting for claim window / submit';
+    }
+    document.getElementById('fair').textContent = u(m.fair_share_estimate || 0);
+    if (lr.r != null) {
+      document.getElementById('lastLine').textContent = 'round ' + lr.r + ' → ' + u(lr.amount || 0);
+      document.getElementById('earned').textContent = '+' + u(lr.amount || 0);
+      document.getElementById('earnedSub').textContent = 'last settled claim (round ' + lr.r + ')';
+      document.getElementById('payout').textContent = '+' + u(lr.amount || 0);
+      document.getElementById('penalty').textContent = u(lr.penalty || 0);
+    } else {
+      document.getElementById('lastLine').textContent = 'No claim settled yet.';
+      document.getElementById('earned').textContent = '0';
+      document.getElementById('payout').textContent = '0';
+      document.getElementById('penalty').textContent = '0';
+    }
+    document.getElementById('strikes').textContent = (m.strikes ?? 0) + ' / ' + (m.clean ?? 0);
+    document.getElementById('tip').textContent = 'block ' + (state?.tip?.height ?? '—');
+    document.getElementById('counted').textContent = 'block ' + (state?.counted ?? '—');
+    const gws = state?.gateways || [];
+    const active = gws.filter(g => g.active).length;
+    document.getElementById('gw').textContent = active + ' of ' + Math.max(gws.length, 1);
+    live.className = 'pill good';
+    live.innerHTML = '<i></i>Live · ' + new Date().toLocaleString();
+  } catch (e) {
+    live.className = 'pill bad';
+    live.innerHTML = '<i></i>Refresh failed';
+  }
+}
+refresh();
+setInterval(refresh, 20000);
+</script>
+</body>
+</html>
