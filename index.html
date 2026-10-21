@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark">
 <title>RESET dashboard</title>
 <style>
-:root{color-scheme:light;--bg:#f4f3ef;--card:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#77766f;--line:#e3e1da;--accent:#2a78d6;--area:rgba(42,120,214,.12);--good:#16692f;--good-bg:#e1f1e5;--warn:#8a5300;--warn-bg:#f9ecd4;--bad:#a8261d;--bad-bg:#f9e2df;--muted-bg:#ecebe6}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#121211;--card:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#8e8d85;--line:#2d2d2a;--accent:#3987e5;--area:rgba(57,135,229,.18);--good:#7fd396;--good-bg:#1d3324;--warn:#f0b65c;--warn-bg:#3a2c14;--bad:#f2948b;--bad-bg:#3d1f1c;--muted-bg:#262624}}
+:root{color-scheme:light;--bg:#f4f3ef;--card:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#77766f;--line:#e3e1da;--accent:#2a78d6;--area:rgba(42,120,214,.12);--good:#16692f;--good-bg:#e1f1e5;--warn:#8a5300;--warn-bg:#f9ecd4;--bad:#a8261d;--bad-bg:#f9e2df;--muted-bg:#ecebe6;--me:#fff8e6;--me-dark:#2a2416}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#121211;--card:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#8e8d85;--line:#2d2d2a;--accent:#3987e5;--area:rgba(57,135,229,.18);--good:#7fd396;--good-bg:#1d3324;--warn:#f0b65c;--warn-bg:#3a2c14;--bad:#f2948b;--bad-bg:#3d1f1c;--muted-bg:#262624;--me:#2a2416}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 #app{max-width:1080px;margin:0 auto;padding:24px 20px 48px}
 .num{font-variant-numeric:tabular-nums}
@@ -28,6 +28,7 @@ h2 .round{text-transform:none;letter-spacing:0;color:var(--ink3);font-weight:500
 .pill i{width:7px;height:7px;border-radius:50%;background:currentColor}
 .pill.good{background:var(--good-bg);color:var(--good)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 0}
+.tiles.three{grid-template-columns:1fr 1fr 1fr}
 .tiles div{background:var(--bg);border-radius:10px;padding:10px 12px}.tiles span{font-size:12px;color:var(--ink3);display:block}.tiles b{font-size:17px;font-weight:600}
 .foot{color:var(--ink3);font-size:12px;margin-top:12px}
 .mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--ink2)}
@@ -40,6 +41,18 @@ table.rounds td.pos{color:var(--good);font-weight:600}
 .barwrap{display:flex;align-items:center;gap:8px}
 .bar{height:6px;border-radius:99px;background:var(--area);flex:1;overflow:hidden;min-width:40px}
 .bar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.summary{margin:0 0 4px;color:var(--ink2);font-size:14px;line-height:1.55}
+.filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.filter input{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--ink);font:13px ui-monospace,Menlo,monospace}
+.filter .hint{font-size:12px;color:var(--ink3)}
+.scroll{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+table.miners{width:100%;border-collapse:collapse;font-size:13px}
+table.miners th,table.miners td{padding:8px 8px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+table.miners th:first-child,table.miners td:first-child{text-align:left}
+table.miners th{color:var(--ink3);font-weight:550;font-size:11px;letter-spacing:.04em;text-transform:uppercase;position:sticky;top:0;background:var(--card);border-top:0;z-index:1}
+table.miners tr.me{background:var(--me)}
+table.miners td.addr{font:12px ui-monospace,Menlo,monospace;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+table.miners td.tag{font-size:11px;color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -90,6 +103,50 @@ table.rounds td.pos{color:var(--good);font-weight:600}
     <p class="foot"><a id="raw" href="#" target="_blank" rel="noopener">原始账户 JSON</a> ·
       <a href="https://playbay.games/games/f6296401-6c88-414a-a436-b7012de3e6c2" target="_blank" rel="noopener">Miners' World</a></p>
   </section>
+
+  <section class="card" data-wide>
+    <h2>全网挖矿概览 <span class="round" id="netDay"></span></h2>
+    <p class="summary" id="netSummary">加载中…</p>
+    <div class="tiles three" style="margin-top:12px">
+      <div><span>今日新增地址</span><b class="num" id="netNew">—</b></div>
+      <div><span>当前挖矿地址总数</span><b class="num" id="netTotal">—</b></div>
+      <div><span>上一结算轮支付</span><b class="num" id="netPaid">—</b></div>
+    </div>
+    <div class="tiles three" style="margin-top:10px">
+      <div><span>矿池锁定合计</span><b class="num" id="netDep">—</b></div>
+      <div><span>退出中合计</span><b class="num" id="netLeave">—</b></div>
+      <div><span>累计挖出（自追踪起）</span><b class="num" id="netMined">—</b></div>
+    </div>
+    <p class="foot">持有≈矿池锁定+退出中（不含可用余额，网关矿工列表不提供）；累计挖出从本看板开始按每轮 last_amount 累加，更早历史可能偏少。</p>
+  </section>
+
+  <section class="card" data-wide>
+    <h2>全网矿工 <span class="round" id="minerCount"></span></h2>
+    <div class="filter">
+      <input id="minerFilter" type="search" placeholder="按地址子串筛选…" autocomplete="off" spellcheck="false">
+      <span class="hint" id="minerFilterHint"></span>
+    </div>
+    <div class="scroll">
+      <table class="miners" id="minersTable">
+        <thead>
+          <tr>
+            <th>地址</th>
+            <th>持有</th>
+            <th>锁定</th>
+            <th>退出中</th>
+            <th>累计挖出(追踪)</th>
+            <th>最近一轮</th>
+            <th>最近分到</th>
+            <th>strikes/clean</th>
+            <th>首次见到</th>
+          </tr>
+        </thead>
+        <tbody id="minersBody"><tr><td colspan="9">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="foot">默认按持有（锁定+退出中）降序。高亮行为本看板钱包。可用余额未计入持有。</p>
+  </section>
+
   <section class="card" data-wide>
     <h2>每轮分到的代币 <span class="round" id="claimCount"></span></h2>
     <p class="sub">网关只保留最近一次结算；这里会自动记下每一轮，之后每 5 分钟更新。</p>
@@ -104,9 +161,55 @@ table.rounds td.pos{color:var(--good);font-weight:600}
 <script>
 const ADDR = '476a5c9d3e514a81eb81bca423d31b13e10b72179fa7caed421e96a57fd982f6';
 const u = n => (Number(n) / 1e8).toFixed(8);
-document.getElementById('shortAddr').textContent = ADDR.slice(0,8) + '…' + ADDR.slice(-6);
+const uShort = n => {
+  const v = Number(n) / 1e8;
+  if (!Number.isFinite(v)) return '—';
+  if (Math.abs(v) >= 1000) return v.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  if (Math.abs(v) >= 1) return v.toFixed(4);
+  return v.toFixed(8);
+};
+const shortA = a => (a || '').slice(0, 8) + '…' + (a || '').slice(-6);
+document.getElementById('shortAddr').textContent = shortA(ADDR);
 document.getElementById('fullAddr').textContent = ADDR;
 document.getElementById('raw').href = 'https://reset.openmayhem.ai/v1/account/' + ADDR;
+
+let lastMiners = [];
+
+function renderMiners(miners, filter) {
+  const q = (filter || '').trim().toLowerCase();
+  const list = q ? miners.filter(m => (m.a || '').toLowerCase().includes(q)) : miners;
+  const body = document.getElementById('minersBody');
+  document.getElementById('minerCount').textContent = list.length
+    ? ('共 ' + list.length + (q ? ' / ' + miners.length : '') + ' 个')
+    : '';
+  document.getElementById('minerFilterHint').textContent = q
+    ? ('匹配 ' + list.length + ' 条')
+    : ('按持有降序 · ' + miners.length + ' 行');
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="9">' + (q ? '无匹配地址' : '暂无矿工数据') + '</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(m => {
+    const me = m.is_me || m.a === ADDR;
+    return '<tr' + (me ? ' class="me"' : '') + '>'
+      + '<td class="addr" title="' + m.a + '">' + shortA(m.a)
+      + (me ? ' <span class="tag">我</span>' : '') + '</td>'
+      + '<td class="num">' + u(m.hold || 0) + '</td>'
+      + '<td class="num">' + u(m.dep || 0) + '</td>'
+      + '<td class="num">' + u(m.leave || 0) + '</td>'
+      + '<td class="num">' + u(m.mined || 0) + '</td>'
+      + '<td class="num">' + (m.last_r || '—') + '</td>'
+      + '<td class="num">' + u(m.last_amt || 0) + '</td>'
+      + '<td class="num">' + (m.strikes ?? 0) + ' / ' + (m.clean ?? 0) + '</td>'
+      + '<td class="num">' + (m.first_seen || '—') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+document.getElementById('minerFilter').addEventListener('input', e => {
+  renderMiners(lastMiners, e.target.value);
+});
+
 async function refresh() {
   const live = document.getElementById('live');
   try {
@@ -151,6 +254,37 @@ async function refresh() {
     const gws = state?.gateways || [];
     const active = gws.filter(g => g.active).length;
     document.getElementById('gw').textContent = active + ' of ' + Math.max(gws.length, 1);
+
+    const net = data.network || null;
+    if (net) {
+      const newToday = Number(net.new_today || 0);
+      const totalActive = Number(net.total_active || 0);
+      const dep = net.sum_deposit || 0;
+      const leave = net.sum_leaving || 0;
+      const mined = net.sum_mined_tracked || 0;
+      const paid = net.last_round_network?.paid;
+      const lastR = net.last_round_network?.r;
+      document.getElementById('netDay').textContent = net.day || '';
+      document.getElementById('netNew').textContent = String(newToday);
+      document.getElementById('netTotal').textContent = String(totalActive);
+      document.getElementById('netDep').textContent = u(dep);
+      document.getElementById('netLeave').textContent = u(leave);
+      document.getElementById('netMined').textContent = u(mined);
+      document.getElementById('netPaid').textContent = paid != null
+        ? (u(paid) + (lastR != null ? ' (r' + lastR + ')' : ''))
+        : '—';
+      document.getElementById('netSummary').textContent =
+        '今天新增 ' + newToday + ' 个地址，全网共 ' + totalActive + ' 个活跃矿工，矿池锁定约 '
+        + uShort(dep) + ' RESET，退出中约 ' + uShort(leave) + ' RESET；看板自追踪起累计挖出约 '
+        + uShort(mined) + ' RESET'
+        + (paid != null ? ('。上一网络结算（round ' + (lastR ?? '—') + '）支付总额 ' + uShort(paid) + ' RESET。') : '。');
+      lastMiners = Array.isArray(net.miners) ? net.miners : [];
+      renderMiners(lastMiners, document.getElementById('minerFilter').value);
+    } else {
+      document.getElementById('netSummary').textContent = '尚无全网数据，等待下一次刷新。';
+      lastMiners = [];
+      renderMiners([], '');
+    }
 
     const rounds = claims.rounds || [];
     document.getElementById('claimCount').textContent = rounds.length ? ('共 ' + rounds.length + ' 轮') : '';
