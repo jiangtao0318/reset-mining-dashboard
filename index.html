@@ -18,8 +18,7 @@
 .status{display:flex;align-items:center;gap:8px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;min-width:0}
-.card[data-wide]{grid-column:span 2}
-@media (max-width:700px){.card[data-wide]{grid-column:auto}}
+.card[data-wide]{grid-column:1 / -1}
 h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:0 0 14px}
 h2 .round{text-transform:none;letter-spacing:0;color:var(--ink3);font-weight:500;margin-left:6px}
 .hero{font-size:34px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0}.sub{color:var(--ink3);font-size:13px;margin:2px 0 14px}
@@ -33,6 +32,14 @@ h2 .round{text-transform:none;letter-spacing:0;color:var(--ink3);font-weight:500
 .foot{color:var(--ink3);font-size:12px;margin-top:12px}
 .mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--ink2)}
 a{color:var(--accent)} small.sub{display:block;margin-top:2px}
+table.rounds{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+table.rounds th,table.rounds td{padding:8px 6px;border-top:1px solid var(--line);text-align:right}
+table.rounds th:first-child,table.rounds td:first-child{text-align:left}
+table.rounds th{color:var(--ink3);font-weight:550;font-size:12px;border-top:0;padding-top:0}
+table.rounds td.pos{color:var(--good);font-weight:600}
+.barwrap{display:flex;align-items:center;gap:8px}
+.bar{height:6px;border-radius:99px;background:var(--area);flex:1;overflow:hidden;min-width:40px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
 </style>
 </head>
 <body>
@@ -44,45 +51,53 @@ a{color:var(--accent)} small.sub{display:block;margin-top:2px}
 </header>
 <div class="grid">
   <section class="card">
-    <h2>My coins</h2>
+    <h2>我的代币</h2>
     <p class="hero num" id="total">—</p>
-    <p class="sub">in total</p>
+    <p class="sub">总计</p>
     <dl>
-      <div class="row"><dt>Spendable</dt><dd class="num" id="balance">—</dd></div>
-      <div class="row"><dt>Locked in the Mine</dt><dd class="num" id="deposit">—</dd></div>
-      <div class="row"><dt>Waiting to exit</dt><dd class="num" id="exits">—</dd></div>
+      <div class="row"><dt>可用</dt><dd class="num" id="balance">—</dd></div>
+      <div class="row"><dt>矿池锁定</dt><dd class="num" id="deposit">—</dd></div>
+      <div class="row"><dt>退出中</dt><dd class="num" id="exits">—</dd></div>
     </dl>
   </section>
-  <section class="card" data-wide>
-    <h2>My earnings</h2>
+  <section class="card">
+    <h2>累计挖矿收入</h2>
     <p class="hero num" id="earned">—</p>
-    <p class="sub" id="earnedSub">from last settled claim</p>
+    <p class="sub" id="earnedSub">已记录的 settled claims</p>
     <div class="tiles">
-      <div><span>Mine payouts (last)</span><b class="num" id="payout">—</b></div>
-      <div><span>Penalties (last)</span><b class="num" id="penalty">—</b></div>
+      <div><span>最近一轮</span><b class="num" id="payout">—</b></div>
+      <div><span>累计罚金</span><b class="num" id="penalty">—</b></div>
     </div>
-    <p class="foot">Data file refreshed about every 5 minutes by GitHub Actions (no browser CORS).</p>
   </section>
   <section class="card">
-    <h2>Mine <span class="round" id="roundLabel">round —</span></h2>
+    <h2>矿池 <span class="round" id="roundLabel">round —</span></h2>
     <p><span id="windowPill" class="pill"><i></i>—</span></p>
     <dl>
-      <div class="row"><dt>My fair share now</dt><dd><span class="num" id="fair">—</span><small class="sub">estimate if the round settled now</small></dd></div>
-      <div class="row"><dt>This round</dt><dd id="claimLine">—</dd></div>
-      <div class="row"><dt>My last claim</dt><dd id="lastLine">—</dd></div>
+      <div class="row"><dt>本轮预估份额</dt><dd><span class="num" id="fair">—</span><small class="sub">若现在结算</small></dd></div>
+      <div class="row"><dt>本轮状态</dt><dd id="claimLine">—</dd></div>
+      <div class="row"><dt>上次结算</dt><dd id="lastLine">—</dd></div>
       <div class="row"><dt>strikes / clean</dt><dd class="num" id="strikes">—</dd></div>
     </dl>
   </section>
   <section class="card">
-    <h2>Network</h2>
+    <h2>网络</h2>
     <dl>
       <div class="row"><dt>Bitcoin tip</dt><dd class="num" id="tip">—</dd></div>
       <div class="row"><dt>Counted</dt><dd class="num" id="counted">—</dd></div>
-      <div class="row"><dt>Gateways active</dt><dd id="gw">—</dd></div>
+      <div class="row"><dt>活跃网关</dt><dd id="gw">—</dd></div>
     </dl>
     <p class="foot mono" id="fullAddr"></p>
-    <p class="foot"><a id="raw" href="#" target="_blank" rel="noopener">Raw account JSON</a> ·
+    <p class="foot"><a id="raw" href="#" target="_blank" rel="noopener">原始账户 JSON</a> ·
       <a href="https://playbay.games/games/f6296401-6c88-414a-a436-b7012de3e6c2" target="_blank" rel="noopener">Miners' World</a></p>
+  </section>
+  <section class="card" data-wide>
+    <h2>每轮分到的代币 <span class="round" id="claimCount"></span></h2>
+    <p class="sub">网关只保留最近一次结算；这里会自动记下每一轮，之后每 5 分钟更新。</p>
+    <table class="rounds" id="roundsTable">
+      <thead><tr><th>轮次</th><th>分到</th><th>公平份额</th><th>罚金</th><th style="width:28%">相对大小</th></tr></thead>
+      <tbody id="roundsBody"><tr><td colspan="5">加载中…</td></tr></tbody>
+    </table>
+    <p class="foot" id="roundsFoot"></p>
   </section>
 </div>
 </main>
@@ -99,42 +114,69 @@ async function refresh() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     const acc = data.account || {}, state = data.state || {}, m = acc.mine || {}, lr = m.last_result || {};
+    const claims = data.claims || { rounds: [], total_mine: '0', total_penalty: '0', count: 0 };
     const exitSum = (acc.exits || []).reduce((s, e) => s + Number(e.amount || e.a || 0), 0);
     document.getElementById('total').textContent = u(Number(acc.balance||0) + Number(acc.deposit||0) + exitSum);
     document.getElementById('balance').textContent = u(acc.balance);
     document.getElementById('deposit').textContent = u(acc.deposit);
     document.getElementById('exits').textContent = u(exitSum);
-    document.getElementById('roundLabel').textContent = 'round ' + (m.r ?? '—');
+    document.getElementById('roundLabel').textContent = 'round ' + (m.r ?? data.round?.r ?? '—');
     const win = document.getElementById('windowPill');
+    const windowOpen = data.round?.window_open;
     if (m.claim) {
-      win.className = 'pill good'; win.innerHTML = '<i></i>Claim registered this round';
-      document.getElementById('claimLine').textContent = 'You claimed level ' + m.claim.q + ' (fair share = 1000).';
+      win.className = 'pill good';
+      win.innerHTML = windowOpen === false
+        ? '<i></i>本轮已登记 claim，窗口已关'
+        : '<i></i>本轮已登记 claim';
+      document.getElementById('claimLine').textContent = 'level ' + m.claim.q + '（公平档 1000）';
     } else {
-      win.className = 'pill'; win.innerHTML = '<i></i>No claim yet this round';
-      document.getElementById('claimLine').textContent = 'Waiting for claim window / submit';
+      win.className = windowOpen ? 'pill warn' : 'pill';
+      win.innerHTML = windowOpen ? '<i></i>领奖窗口开着，尚未 claim' : '<i></i>本轮尚未 claim';
+      document.getElementById('claimLine').textContent = '等待窗口 / 提交';
     }
     document.getElementById('fair').textContent = u(m.fair_share_estimate || 0);
     if (lr.r != null) {
       document.getElementById('lastLine').textContent = 'round ' + lr.r + ' → ' + u(lr.amount || 0);
-      document.getElementById('earned').textContent = '+' + u(lr.amount || 0);
-      document.getElementById('earnedSub').textContent = 'last settled claim (round ' + lr.r + ')';
       document.getElementById('payout').textContent = '+' + u(lr.amount || 0);
-      document.getElementById('penalty').textContent = u(lr.penalty || 0);
     } else {
-      document.getElementById('lastLine').textContent = 'No claim settled yet.';
-      document.getElementById('earned').textContent = '0';
+      document.getElementById('lastLine').textContent = '暂无结算';
       document.getElementById('payout').textContent = '0';
-      document.getElementById('penalty').textContent = '0';
     }
+    document.getElementById('earned').textContent = u(claims.total_mine || 0);
+    document.getElementById('earnedSub').textContent = '已记录 ' + (claims.count || 0) + ' 轮 settled claim';
+    document.getElementById('penalty').textContent = u(claims.total_penalty || 0);
     document.getElementById('strikes').textContent = (m.strikes ?? 0) + ' / ' + (m.clean ?? 0);
     document.getElementById('tip').textContent = 'block ' + (state?.tip?.height ?? '—');
     document.getElementById('counted').textContent = 'block ' + (state?.counted ?? '—');
     const gws = state?.gateways || [];
     const active = gws.filter(g => g.active).length;
     document.getElementById('gw').textContent = active + ' of ' + Math.max(gws.length, 1);
-    const when = data.updated_at ? new Date(data.updated_at).toLocaleString() : '';
+
+    const rounds = claims.rounds || [];
+    document.getElementById('claimCount').textContent = rounds.length ? ('共 ' + rounds.length + ' 轮') : '';
+    const maxAmt = Math.max(1, ...rounds.map(c => Number(c.amount || 0)));
+    const body = document.getElementById('roundsBody');
+    if (!rounds.length) {
+      body.innerHTML = '<tr><td colspan="5">还没有记录。结算后会自动追加。</td></tr>';
+    } else {
+      body.innerHTML = rounds.map(c => {
+        const amt = Number(c.amount || 0);
+        const pct = Math.round(100 * amt / maxAmt);
+        return '<tr>'
+          + '<td>round ' + c.r + '</td>'
+          + '<td class="num pos">+' + u(amt) + '</td>'
+          + '<td class="num">' + u(c.fair || 0) + '</td>'
+          + '<td class="num">' + u(c.penalty || 0) + '</td>'
+          + '<td><div class="barwrap"><div class="bar"><i style="width:' + pct + '%"></i></div></div></td>'
+          + '</tr>';
+      }).join('');
+    }
+    document.getElementById('roundsFoot').textContent =
+      '合计挖矿收入 ' + u(claims.total_mine || 0) + ' · 数据约每 5 分钟刷新';
+
+    const when = data.updated_at ? new Date(data.updated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' 上海' : '';
     live.className = 'pill good';
-    live.innerHTML = '<i></i>Live · updated ' + when;
+    live.innerHTML = '<i></i>Live · ' + when;
   } catch (e) {
     live.className = 'pill bad';
     live.innerHTML = '<i></i>Refresh failed';
