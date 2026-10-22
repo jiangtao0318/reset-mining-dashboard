@@ -353,10 +353,11 @@ async function refresh() {
     }
     const act = overview.active_addresses ?? data.network?.total_active;
     document.getElementById('mAddrs').textContent = (act != null ? act : '—') + ' / ' + (overview.total_addresses ?? act ?? '—');
+    const lockN = overview.locked_addresses;
     const leaveN = overview.leaving_addresses;
     document.getElementById('mAddrsSub').textContent =
-      '锁仓 ' + (overview.locked_reset != null ? fmtReset(overview.locked_reset, 0) : '—')
-      + (leaveN != null ? (' · 退出中地址约 ' + leaveN) : '');
+      '锁仓 ' + (lockN != null ? lockN : '—')
+      + ' · 退出中 ' + (leaveN != null ? leaveN : '—');
     document.getElementById('mNetLock').textContent = overview.locked_reset != null ? fmtReset(overview.locked_reset, 0) : '—';
     document.getElementById('mNetOut').textContent = overview.network_daily_output != null
       ? ('每轮产能约 ' + fmtReset(overview.network_daily_output, 1) + '（看板常称每天产出）')

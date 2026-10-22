@@ -395,9 +395,9 @@ const est_daily_usdc = (market?.usdc != null && Number.isFinite(est.est_daily_re
   : null;
 
 const activeAddrs = Number(network.total_active || 0);
-const leavingApprox = Array.isArray(network.miners)
-  ? network.miners.filter(m => Number(m.leave || 0) > 0).length
-  : 0;
+const minersArr = Array.isArray(network.miners) ? network.miners : [];
+const lockedAddrs = minersArr.filter(m => Number(m.dep || 0) > 0).length;
+const leavingApprox = minersArr.filter(m => Number(m.leave || 0) > 0).length;
 
 const out = {
   updated_at: new Date().toISOString(),
@@ -433,6 +433,7 @@ const out = {
     total_addresses: activeAddrs, // gateway view is active miners
     locked_reset: Number(network.sum_deposit || 0) / ATOM,
     leaving_reset: Number(network.sum_leaving || 0) / ATOM,
+    locked_addresses: lockedAddrs,
     leaving_addresses: leavingApprox,
     network_daily_output: est.network_daily_output,
   },
