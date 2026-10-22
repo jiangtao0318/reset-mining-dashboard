@@ -8,6 +8,9 @@ const DIR = '/workspace/reset-dash-public';
 const SIGNER_DIR = '/home/box/.reset-signer';
 const CLAIMS_PATH = `${SIGNER_DIR}/claims.json`;
 const NETWORK_PATH = `${SIGNER_DIR}/network-miners.json`;
+const PRICE_HISTORY_PATH = `${SIGNER_DIR}/price-history.json`;
+const MARKET_API = 'https://tractrader.com/trading-post/market-api.php';
+const ATOM = 1e8;
 
 function shanghaiDay(d = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -63,6 +66,126 @@ function loadNetwork() {
 function saveNetwork(data) {
   mkdirSync(SIGNER_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(NETWORK_PATH, JSON.stringify(data) + '\n', { mode: 0o600 });
+}
+
+
+function loadPriceHistory() {
+  try {
+    const d = JSON.parse(readFileSync(PRICE_HISTORY_PATH, 'utf8'));
+    if (d?.v === 1 && Array.isArray(d.points)) return d;
+  } catch {}
+  return { v: 1, points: [] };
+}
+
+function savePriceHistory(data) {
+  mkdirSync(SIGNER_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(PRICE_HISTORY_PATH, JSON.stringify(data) + '\n', { mode: 0o600 });
+}
+
+async function fetchMarketPrice() {
+  const res = await fetch(MARKET_API, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error('market-api ' + res.status);
+  const d = await res.json();
+  if (!d?.ok || !d.pair) throw new Error('market-api bad payload');
+  const last = Number(d.pair.last);
+  const bestSell = d.pair.bestSell != null ? Number(d.pair.bestSell) : null;
+  const bestBuy = d.pair.bestBuy != null ? Number(d.pair.bestBuy) : null;
+  let usdc = Number.isFinite(last) ? last : NaN;
+  // Prefer mid of best book when last is missing
+  if (!Number.isFinite(usdc) && Number.isFinite(bestSell) && Number.isFinite(bestBuy)) {
+    usdc = (bestSell + bestBuy) / 2;
+  }
+  let change_24h = d.pair.change24h != null ? Number(d.pair.change24h) : null;
+  const trades = Array.isArray(d.trades) ? d.trades : [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  if ((change_24h == null || !Number.isFinite(change_24h)) && trades.length && Number.isFinite(usdc)) {
+    const cutoff = nowSec - 86400;
+    // trades may be oldest-first or newest-first; find closest to 24h ago
+    let best = null, bestDist = Infinity;
+    for (const tr of trades) {
+      const t = Number(tr.t);
+      const pr = Number(tr.p);
+      if (!Number.isFinite(t) || !Number.isFinite(pr) || pr <= 0) continue;
+      const dist = Math.abs(t - cutoff);
+      if (dist < bestDist) { bestDist = dist; best = pr; }
+    }
+    if (best != null && best > 0) change_24h = ((usdc - best) / best) * 100;
+  }
+  return {
+    usdc: Number.isFinite(usdc) ? usdc : null,
+    change_24h: Number.isFinite(change_24h) ? change_24h : null,
+    best_buy: Number.isFinite(bestBuy) ? bestBuy : null,
+    best_sell: Number.isFinite(bestSell) ? bestSell : null,
+    volume_24h: d.pair.volume24h != null ? Number(d.pair.volume24h) : null,
+    trades_24h: d.pair.trades24h != null ? Number(d.pair.trades24h) : null,
+    source: 'tractrader-market-api',
+    updated_at: new Date().toISOString(),
+    trades_sample: trades.slice(-48).map(tr => ({ t: Number(tr.t), p: Number(tr.p) })).filter(x => Number.isFinite(x.t) && Number.isFinite(x.p)),
+  };
+}
+
+function appendPricePoint(store, usdc) {
+  if (!Number.isFinite(usdc)) return store;
+  const now = Date.now();
+  const points = store.points || [];
+  const last = points[points.length - 1];
+  // Dedup if same price within 2 minutes
+  if (last && Math.abs(now - last.t) < 120000 && last.p === usdc) return store;
+  points.push({ t: now, p: usdc });
+  const cutoff = now - 30 * 86400000;
+  store.points = points.filter(pt => pt.t >= cutoff);
+  store.updated_at = new Date().toISOString();
+  return store;
+}
+
+/** Estimate personal daily mining from recent settled claims. */
+function estimateDailyMining(claims, roundInfo, networkLast) {
+  const list = Array.isArray(claims) ? claims.filter(c => c && c.r != null) : [];
+  const recent = list.slice(-20);
+  let avgAtomic = 0;
+  if (recent.length) {
+    avgAtomic = recent.reduce((s, c) => s + Number(c.amount || 0), 0) / recent.length;
+  }
+  // Round duration: prefer consecutive settled_at gaps; else BTC block span of current round; else ~56m from logs.
+  let roundSec = null;
+  const withTs = list.filter(c => c.settled_at).sort((a, b) => Number(a.r) - Number(b.r));
+  const gaps = [];
+  for (let i = 1; i < withTs.length; i++) {
+    const r0 = Number(withTs[i - 1].r), r1 = Number(withTs[i].r);
+    if (r1 !== r0 + 1) continue;
+    const t0 = Date.parse(withTs[i - 1].settled_at);
+    const t1 = Date.parse(withTs[i].settled_at);
+    if (Number.isFinite(t0) && Number.isFinite(t1) && t1 > t0) gaps.push((t1 - t0) / 1000);
+  }
+  if (gaps.length >= 3) {
+    gaps.sort((a, b) => a - b);
+    roundSec = gaps[Math.floor(gaps.length / 2)]; // median
+  }
+  if (!roundSec && roundInfo?.start != null && roundInfo?.end != null) {
+    const blocks = Number(roundInfo.end) - Number(roundInfo.start);
+    if (blocks > 0) roundSec = blocks * 600; // ~10 min/block
+  }
+  if (!roundSec) roundSec = 56 * 60; // verified from fair-mine log consecutive rounds ~56 min
+  const roundsPerDay = 86400 / roundSec;
+  const est_daily_reset = (avgAtomic / ATOM) * roundsPerDay;
+  // Network "每天产出" on public dashboards shows round capacity (atomic→human), not capacity×rounds.
+  let network_daily_output = null;
+  const cap = networkLast?.capacity;
+  if (cap != null) network_daily_output = Number(cap) / ATOM;
+  let network_paid_last = null;
+  if (networkLast?.paid != null) network_paid_last = Number(networkLast.paid) / ATOM;
+  return {
+    est_daily_reset,
+    avg_per_round_reset: avgAtomic / ATOM,
+    rounds_per_day: roundsPerDay,
+    round_sec: roundSec,
+    sample_claims: recent.length,
+    method: gaps.length >= 3
+      ? 'median_settled_at_gap_x_avg_claim'
+      : (roundInfo?.start != null ? 'round_block_span_x_avg_claim' : 'log_avg_56m_x_avg_claim'),
+    network_daily_output,
+    network_paid_last,
+  };
 }
 
 async function fetchAllMiners() {
@@ -221,10 +344,11 @@ function buildNetworkOut(store, miners, mineView, today, newCount) {
   };
 }
 
-const [account, state, mineBundle] = await Promise.all([
+const [account, state, mineBundle, market] = await Promise.all([
   fetch(`${GW}/v1/account/${ADDR}`).then(r => { if (!r.ok) throw new Error('account ' + r.status); return r.json(); }),
   fetch(`${GW}/v1/state`).then(r => { if (!r.ok) throw new Error('state ' + r.status); return r.json(); }),
   fetchAllMiners(),
+  fetchMarketPrice().catch(err => ({ usdc: null, change_24h: null, error: String(err.message || err), updated_at: new Date().toISOString(), source: 'tractrader-market-api' })),
 ]);
 
 const mineView = mineBundle.page;
@@ -250,6 +374,31 @@ saveNetwork(networkStore);
 
 const network = buildNetworkOut(networkStore, allMiners, mineView, today, newCount);
 
+const priceStore = loadPriceHistory();
+if (market?.usdc != null) appendPricePoint(priceStore, market.usdc);
+// Also fold recent trade samples into history (dedupe by minute bucket)
+if (Array.isArray(market?.trades_sample)) {
+  for (const tr of market.trades_sample) {
+    const tMs = tr.t * 1000;
+    const exists = priceStore.points.some(pt => Math.abs(pt.t - tMs) < 60000 && pt.p === tr.p);
+    if (!exists && Number.isFinite(tr.p)) priceStore.points.push({ t: tMs, p: tr.p });
+  }
+  priceStore.points.sort((a, b) => a.t - b.t);
+  const cutoff = Date.now() - 30 * 86400000;
+  priceStore.points = priceStore.points.filter(pt => pt.t >= cutoff);
+}
+savePriceHistory(priceStore);
+
+const est = estimateDailyMining(claimsStore.claims, roundInfo, network.last_round_network);
+const est_daily_usdc = (market?.usdc != null && Number.isFinite(est.est_daily_reset))
+  ? est.est_daily_reset * market.usdc
+  : null;
+
+const activeAddrs = Number(network.total_active || 0);
+const leavingApprox = Array.isArray(network.miners)
+  ? network.miners.filter(m => Number(m.leave || 0) > 0).length
+  : 0;
+
 const out = {
   updated_at: new Date().toISOString(),
   address: ADDR,
@@ -264,6 +413,29 @@ const out = {
     rounds: [...claimsStore.claims].reverse(),
   },
   network,
+  price: {
+    usdc: market?.usdc ?? null,
+    change_24h: market?.change_24h ?? null,
+    best_buy: market?.best_buy ?? null,
+    best_sell: market?.best_sell ?? null,
+    volume_24h: market?.volume_24h ?? null,
+    trades_24h: market?.trades_24h ?? null,
+    updated_at: market?.updated_at ?? null,
+    source: market?.source ?? null,
+    error: market?.error ?? null,
+  },
+  price_history: priceStore.points.map(pt => ({ t: pt.t, p: pt.p })),
+  est_daily_reset: est.est_daily_reset,
+  est_daily_usdc,
+  est_meta: est,
+  overview: {
+    active_addresses: activeAddrs,
+    total_addresses: activeAddrs, // gateway view is active miners
+    locked_reset: Number(network.sum_deposit || 0) / ATOM,
+    leaving_reset: Number(network.sum_leaving || 0) / ATOM,
+    leaving_addresses: leavingApprox,
+    network_daily_output: est.network_daily_output,
+  },
 };
 
 const path = `${DIR}/data.json`;
@@ -287,21 +459,30 @@ function networkSummary(n) {
   };
 }
 
+function priceSummary(pr) {
+  if (!pr) return null;
+  return { usdc: pr.usdc, change_24h: pr.change_24h, updated_at: pr.updated_at };
+}
+
 const same = prevObj
   && JSON.stringify(prevObj.account) === JSON.stringify(account)
   && JSON.stringify(prevObj.state?.tip) === JSON.stringify(state?.tip)
   && prevObj.state?.counted === state?.counted
   && JSON.stringify(prevObj.claims?.rounds) === JSON.stringify(out.claims.rounds)
   && JSON.stringify(prevObj.round) === JSON.stringify(roundInfo)
-  && JSON.stringify(networkSummary(prevObj.network)) === JSON.stringify(networkSummary(network));
+  && JSON.stringify(networkSummary(prevObj.network)) === JSON.stringify(networkSummary(network))
+  && JSON.stringify(priceSummary(prevObj.price)) === JSON.stringify(priceSummary(out.price))
+  && Number(prevObj.est_daily_reset || 0).toFixed(8) === Number(out.est_daily_reset || 0).toFixed(8);
 
 writeFileSync(path, JSON.stringify(out));
 if (same) {
   console.log('unchanged', out.updated_at, 'claims', out.claims.count,
-    'network', network.total_active, 'new', network.new_today, 'rows', network.miners.length);
+    'network', network.total_active, 'new', network.new_today, 'rows', network.miners.length,
+  'price', out.price?.usdc, 'est_daily', out.est_daily_reset);
   process.exit(0);
 }
 execSync('git add data.json && git -c user.email=bot@local -c user.name=reset-dash commit -m "chore: refresh data.json" && git push origin main', { cwd: DIR, stdio: 'inherit' });
 console.log('pushed', out.updated_at, 'bal', account.balance, 'dep', account.deposit,
   'round', account.mine?.r, 'claims', out.claims.count, claimAdded ? '+new' : '',
-  'network', network.total_active, 'new', network.new_today, 'rows', network.miners.length);
+  'network', network.total_active, 'new', network.new_today, 'rows', network.miners.length,
+  'price', out.price?.usdc, 'est_daily', out.est_daily_reset);
