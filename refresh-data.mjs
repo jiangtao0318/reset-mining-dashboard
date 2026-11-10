@@ -489,18 +489,22 @@ if (Array.isArray(market?.trades_sample)) {
 }
 savePriceHistory(priceStore);
 
-// If market change_24h missing, derive from our own price_history (~24h ago)
-if ((market?.change_24h == null || !Number.isFinite(market.change_24h)) && market?.usdc != null && priceStore.points?.length) {
-  const cutoff = Date.now() - 86400000;
-  let best = null, bestDist = Infinity;
-  for (const pt of priceStore.points) {
-    if (!Number.isFinite(pt.p) || pt.p <= 0) continue;
-    const dist = Math.abs(pt.t - cutoff);
-    if (dist < bestDist) { bestDist = dist; best = pt.p; }
+// Skip history-derived 24h % when card shows lowest-ask (history still has dust/last).
+if (!(market && typeof market.source === 'string' && market.source.includes('lowest-ask'))) {
+  if ((market?.change_24h == null || !Number.isFinite(market.change_24h)) && market?.usdc != null && priceStore.points?.length) {
+    const cutoff = Date.now() - 86400000;
+    let best = null, bestDist = Infinity;
+    for (const pt of priceStore.points) {
+      if (!Number.isFinite(pt.p) || pt.p <= 0) continue;
+      const dist = Math.abs(pt.t - cutoff);
+      if (dist < bestDist) { bestDist = dist; best = pt.p; }
+    }
+    if (best != null && best > 0 && bestDist <= 12 * 3600000) {
+      market.change_24h = ((market.usdc - best) / best) * 100;
+    }
   }
-  if (best != null && best > 0 && bestDist <= 12 * 3600000) {
-    market.change_24h = ((market.usdc - best) / best) * 100;
-  }
+} else if (market && (market.change_24h == null || !Number.isFinite(Number(market.change_24h)))) {
+  market.change_24h = null;
 }
 
 const est = estimateDailyMining(claimsStore.claims, roundInfo, network.last_round_network);
