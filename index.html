@@ -207,7 +207,7 @@ table.miners td.tag{font-size:11px;color:var(--accent);font-weight:600}
             <th>最近一轮</th>
             <th>最近分到</th>
             <th>strikes/clean</th>
-            <th>首次见到</th>
+            <th>最后见到</th>
           </tr>
         </thead>
         <tbody id="minersBody"><tr><td colspan="9">加载中…</td></tr></tbody>
@@ -218,7 +218,7 @@ table.miners td.tag{font-size:11px;color:var(--accent);font-weight:600}
 
   <section class="card" data-wide>
     <h2>每轮分到的代币 <span class="round" id="claimCount"></span></h2>
-    <p class="sub">网关只保留最近一次结算；这里会自动记下每一轮，之后每 5 分钟更新。</p>
+    <p class="sub">网关只保留最近一次结算；这里会自动记下每一轮，之后每天更新。</p>
     <table class="rounds" id="roundsTable">
       <thead><tr><th>轮次</th><th>分到</th><th>公平份额</th><th>罚金</th><th style="width:28%">相对大小</th></tr></thead>
       <tbody id="roundsBody"><tr><td colspan="5">加载中…</td></tr></tbody>
@@ -319,7 +319,7 @@ function renderMiners(miners, filter) {
       + '<td class="num">' + (m.last_r || '—') + '</td>'
       + '<td class="num">' + u(m.last_amt || 0) + '</td>'
       + '<td class="num">' + (m.strikes ?? 0) + ' / ' + (m.clean ?? 0) + '</td>'
-      + '<td class="num">' + (m.first_seen || '—') + '</td>'
+      + '<td class="num">' + (m.last_seen || m.first_seen || '—') + '</td>'
       + '</tr>';
   }).join('');
 }
@@ -376,12 +376,14 @@ async function refresh() {
       ? new Date(data.updated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' 上海时间'
       : '';
     document.getElementById('metaLine').textContent =
-      '数据截至 ' + whenMeta + (roundNo != null ? (' · 第 ' + roundNo + ' 轮') : '') + ' · 每 5 分钟自动刷新';
+      '数据截至 ' + whenMeta + (roundNo != null ? (' · 第 ' + roundNo + ' 轮') : '') + ' · 每天自动刷新';
     document.getElementById('priceSub').textContent =
       (price.source ? ('来源 ' + price.source) : '来源 Intercom DEX')
+      + (price.source && String(price.source).includes('lowest-ask') ? '（当前最低卖单）' : '')
       + (price.best_buy != null || price.best_sell != null
         ? (' · 买一 ' + fmtUsd(price.best_buy) + ' / 卖一 ' + fmtUsd(price.best_sell))
         : '')
+      + (price.last_nondust != null ? (' · 最近非尘埃成交 ' + fmtUsd(price.last_nondust)) : '')
       + (data.est_meta?.method ? (' · 日产量算法: ' + data.est_meta.method) : '');
     renderPriceChart(data.price_history || []);
     if (window.__DEX_SOL || window.__DEX_TRAC) {
@@ -477,7 +479,7 @@ async function refresh() {
       }).join('');
     }
     document.getElementById('roundsFoot').textContent =
-      '合计挖矿收入 ' + u(claims.total_mine || 0) + ' · 数据约每 5 分钟刷新';
+      '合计挖矿收入 ' + u(claims.total_mine || 0) + ' · 数据约每天刷新';
 
     const when = data.updated_at ? new Date(data.updated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' 上海' : '';
     live.className = 'pill good';

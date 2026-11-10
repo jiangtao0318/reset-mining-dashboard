@@ -82,45 +82,144 @@ function savePriceHistory(data) {
   writeFileSync(PRICE_HISTORY_PATH, JSON.stringify(data) + '\n', { mode: 0o600 });
 }
 
-async function fetchMarketPrice() {
-  const res = await fetch(MARKET_API, { signal: AbortSignal.timeout(20000) });
-  if (!res.ok) throw new Error('market-api ' + res.status);
-  const d = await res.json();
-  if (!d?.ok || !d.pair) throw new Error('market-api bad payload');
-  const last = Number(d.pair.last);
-  const bestSell = d.pair.bestSell != null ? Number(d.pair.bestSell) : null;
-  const bestBuy = d.pair.bestBuy != null ? Number(d.pair.bestBuy) : null;
-  let usdc = Number.isFinite(last) ? last : NaN;
-  // Prefer mid of best book when last is missing
-  if (!Number.isFinite(usdc) && Number.isFinite(bestSell) && Number.isFinite(bestBuy)) {
-    usdc = (bestSell + bestBuy) / 2;
+async function fetchDexBook() {
+  // Read-only local Intercom DEX control /status → RESET/USDC book.
+  try {
+    const cfg = JSON.parse(readFileSync('/home/box/.intercom-dex/trader.json', 'utf8'));
+    const tokenPath = String(cfg?.control?.tokenFile || '').replace(/^~/, process.env.HOME || '');
+    const port = cfg?.control?.port;
+    if (!port || !tokenPath) return null;
+    const token = readFileSync(tokenPath, 'utf8').trim();
+    const res = await fetch(`http://127.0.0.1:${port}/status`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error('dex-status ' + res.status);
+    const d = await res.json();
+    const levels = d?.book?.['RESET/USDC']?.levels || [];
+    const sells = levels.filter(l => l?.side === 'sell').map(l => Number(l.price)).filter(p => Number.isFinite(p) && p > 0);
+    const buys = levels.filter(l => l?.side === 'buy').map(l => Number(l.price)).filter(p => Number.isFinite(p) && p > 0);
+    const bestSell = sells.length ? Math.min(...sells) : null;
+    const bestBuy = buys.length ? Math.max(...buys) : null;
+    const ticker = d?.tickers?.['RESET/USDC'] || null;
+    return {
+      best_sell: bestSell,
+      best_buy: bestBuy,
+      ticker_last: ticker?.last != null ? Number(ticker.last) : null,
+      volume_24h: ticker?.volume24h != null ? Number(ticker.volume24h) / ATOM : null, // atomic USDC? keep raw below
+      volume_24h_raw: ticker?.volume24h != null ? Number(ticker.volume24h) : null,
+      trades_24h: ticker?.trades24h != null ? Number(ticker.trades24h) : null,
+      source: 'intercom-dex-lowest-ask',
+    };
+  } catch (err) {
+    return { error: String(err.message || err) };
   }
-  let change_24h = d.pair.change24h != null ? Number(d.pair.change24h) : null;
-  const trades = Array.isArray(d.trades) ? d.trades : [];
+}
+
+async function fetchMarketPrice() {
+  // Live card price must NOT use dust "last" prints (e.g. 0.01 RESET @ 73).
+  // Prefer current lowest ask from local DEX book; else tractrader offers; else non-dust last trade.
+  const [dex, apiRes] = await Promise.all([
+    fetchDexBook(),
+    fetch(MARKET_API, { signal: AbortSignal.timeout(20000) }).then(async res => {
+      if (!res.ok) throw new Error('market-api ' + res.status);
+      return res.json();
+    }).catch(err => ({ ok: false, error: String(err.message || err) })),
+  ]);
+
+  const trades = Array.isArray(apiRes?.trades) ? apiRes.trades : [];
+  const offers = Array.isArray(apiRes?.offers) ? apiRes.offers : [];
   const nowSec = Math.floor(Date.now() / 1000);
-  if ((change_24h == null || !Number.isFinite(change_24h)) && trades.length && Number.isFinite(usdc)) {
+
+  let bestSell = Number.isFinite(dex?.best_sell) ? dex.best_sell : null;
+  let bestBuy = Number.isFinite(dex?.best_buy) ? dex.best_buy : null;
+  let source = null;
+
+  if (bestSell == null) {
+    const sellOffers = offers.filter(o => o?.side === 'sell').map(o => Number(o.price)).filter(p => Number.isFinite(p) && p > 0);
+    if (sellOffers.length) bestSell = Math.min(...sellOffers);
+  }
+  if (bestBuy == null) {
+    const buyOffers = offers.filter(o => o?.side === 'buy').map(o => Number(o.price)).filter(p => Number.isFinite(p) && p > 0);
+    if (buyOffers.length) bestBuy = Math.max(...buyOffers);
+  }
+
+  // Non-dust last trade as fallback / reference
+  let lastNondust = null, lastNondustT = null;
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const tr = trades[i];
+    const pr = Number(tr?.p);
+    const t = Number(tr?.t);
+    if (tr?.dust) continue;
+    if (!Number.isFinite(pr) || pr <= 0) continue;
+    lastNondust = pr;
+    lastNondustT = Number.isFinite(t) ? t : null;
+    break;
+  }
+
+  let usdc = null;
+  if (Number.isFinite(bestSell) && bestSell > 0) {
+    usdc = bestSell;
+    source = (dex && Number.isFinite(dex.best_sell)) ? 'intercom-dex-lowest-ask' : 'tractrader-offers-lowest-ask';
+  } else if (Number.isFinite(lastNondust)) {
+    usdc = lastNondust;
+    source = 'tractrader-last-nondust';
+  } else if (Number.isFinite(dex?.ticker_last) && dex.ticker_last > 0) {
+    // last resort; may be dust — marked honestly
+    usdc = dex.ticker_last;
+    source = 'intercom-dex-ticker-last';
+  } else if (apiRes?.pair?.last != null && Number.isFinite(Number(apiRes.pair.last))) {
+    usdc = Number(apiRes.pair.last);
+    source = 'tractrader-last';
+  }
+
+  // 24h change: compare to nearest non-dust trade ~24h ago; else price-history later.
+  let change_24h = null;
+  if (Number.isFinite(usdc) && trades.length) {
     const cutoff = nowSec - 86400;
-    // trades may be oldest-first or newest-first; find closest to 24h ago
     let best = null, bestDist = Infinity;
     for (const tr of trades) {
+      if (tr?.dust) continue;
       const t = Number(tr.t);
       const pr = Number(tr.p);
       if (!Number.isFinite(t) || !Number.isFinite(pr) || pr <= 0) continue;
       const dist = Math.abs(t - cutoff);
       if (dist < bestDist) { bestDist = dist; best = pr; }
     }
-    if (best != null && best > 0) change_24h = ((usdc - best) / best) * 100;
+    // only accept if within 12h of the cutoff
+    if (best != null && best > 0 && bestDist <= 12 * 3600) {
+      change_24h = ((usdc - best) / best) * 100;
+    }
   }
+
+  // volume: prefer API pair (already human USDC); ignore atomic ticker units
+  let volume_24h = apiRes?.pair?.volume24h != null ? Number(apiRes.pair.volume24h) : null;
+  let trades_24h = apiRes?.pair?.trades24h != null ? Number(apiRes.pair.trades24h) : (dex?.trades_24h ?? null);
+
+  // Prefer non-dust trades for chart samples
+  const trades_sample = trades
+    .filter(tr => !tr?.dust)
+    .slice(-48)
+    .map(tr => ({ t: Number(tr.t), p: Number(tr.p) }))
+    .filter(x => Number.isFinite(x.t) && Number.isFinite(x.p) && x.p > 0);
+
+  const errors = [];
+  if (dex?.error) errors.push('dex:' + dex.error);
+  if (apiRes?.error) errors.push('api:' + apiRes.error);
+
   return {
     usdc: Number.isFinite(usdc) ? usdc : null,
     change_24h: Number.isFinite(change_24h) ? change_24h : null,
     best_buy: Number.isFinite(bestBuy) ? bestBuy : null,
     best_sell: Number.isFinite(bestSell) ? bestSell : null,
-    volume_24h: d.pair.volume24h != null ? Number(d.pair.volume24h) : null,
-    trades_24h: d.pair.trades24h != null ? Number(d.pair.trades24h) : null,
-    source: 'tractrader-market-api',
+    last_nondust: Number.isFinite(lastNondust) ? lastNondust : null,
+    last_nondust_at: lastNondustT,
+    volume_24h: Number.isFinite(volume_24h) ? volume_24h : null,
+    trades_24h: Number.isFinite(trades_24h) ? trades_24h : null,
+    source,
     updated_at: new Date().toISOString(),
-    trades_sample: trades.slice(-48).map(tr => ({ t: Number(tr.t), p: Number(tr.p) })).filter(x => Number.isFinite(x.t) && Number.isFinite(x.p)),
+    trades_sample,
+    error: errors.length ? errors.join('; ') : null,
   };
 }
 
@@ -316,6 +415,7 @@ function buildNetworkOut(store, miners, mineView, today, newCount) {
       clean,
       claimed,
       first_seen: entry.first_seen || today,
+      last_seen: entry.last_seen || today,
       is_me: a === ADDR,
     });
   }
@@ -389,6 +489,20 @@ if (Array.isArray(market?.trades_sample)) {
 }
 savePriceHistory(priceStore);
 
+// If market change_24h missing, derive from our own price_history (~24h ago)
+if ((market?.change_24h == null || !Number.isFinite(market.change_24h)) && market?.usdc != null && priceStore.points?.length) {
+  const cutoff = Date.now() - 86400000;
+  let best = null, bestDist = Infinity;
+  for (const pt of priceStore.points) {
+    if (!Number.isFinite(pt.p) || pt.p <= 0) continue;
+    const dist = Math.abs(pt.t - cutoff);
+    if (dist < bestDist) { bestDist = dist; best = pt.p; }
+  }
+  if (best != null && best > 0 && bestDist <= 12 * 3600000) {
+    market.change_24h = ((market.usdc - best) / best) * 100;
+  }
+}
+
 const est = estimateDailyMining(claimsStore.claims, roundInfo, network.last_round_network);
 const est_daily_usdc = (market?.usdc != null && Number.isFinite(est.est_daily_reset))
   ? est.est_daily_reset * market.usdc
@@ -418,6 +532,8 @@ const out = {
     change_24h: market?.change_24h ?? null,
     best_buy: market?.best_buy ?? null,
     best_sell: market?.best_sell ?? null,
+    last_nondust: market?.last_nondust ?? null,
+    last_nondust_at: market?.last_nondust_at ?? null,
     volume_24h: market?.volume_24h ?? null,
     trades_24h: market?.trades_24h ?? null,
     updated_at: market?.updated_at ?? null,
